@@ -77,10 +77,30 @@ public class TaskDbContext : DbContext
             entity.Property(e => e.UserId)
                 .IsRequired()
                 .HasMaxLength(450);
-            
-            entity.Property(e => e.Version)
-                .IsRowVersion();
-            
+
+            if (Database.IsSqlite())
+            {
+                // SQLite: BLOB + randomblob で既定値を与える（NOT NULL 回避）
+                entity.Property(e => e.Version)
+                    .IsConcurrencyToken()
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("BLOB")
+                    .HasDefaultValueSql("randomblob(8)");
+            }
+            else if (Database.IsSqlServer())
+            {
+                // SQL Server: rowversion を使う（DB 側で自動生成、EF の楽観ロック対応）
+                entity.Property(e => e.Version)
+                    .IsRowVersion(); // これで byte[] が rowversion として扱われる
+            }
+            else
+            {
+                // その他プロバイダ向けのフォールバック（必要に応じて調整）
+                entity.Property(e => e.Version)
+                    .IsConcurrencyToken()
+                    .ValueGeneratedOnAddOrUpdate();
+            }
+
             // インデックス
             entity.HasIndex(e => new { e.UserId, e.Status })
                 .HasDatabaseName("IX_Tasks_UserId_Status");
