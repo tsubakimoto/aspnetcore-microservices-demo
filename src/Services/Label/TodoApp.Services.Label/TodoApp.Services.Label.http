@@ -1,0 +1,6 @@
+@TodoApp.Services.Label_HostAddress = http://localhost:5276
+
+GET {{TodoApp.Services.Label_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

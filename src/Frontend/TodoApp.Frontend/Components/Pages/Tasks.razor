@@ -1,0 +1,467 @@
+@page "/tasks"
+@using TodoApp.Frontend.Services
+@using TodoApp.Shared.DTOs
+@using TodoApp.Shared.DTOs.Task
+@using TodoApp.Shared.Models
+@inject TaskApiService TaskApi
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<PageTitle>タスク管理 - ToDoアプリ</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4">
+                <i class="fas fa-tasks me-2"></i>タスク管理
+            </h1>
+        </div>
+    </div>
+
+    <!-- 検索・フィルター・新規作成ボタン -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                <input @bind="searchText" @onkeypress="OnSearchKeyPress" class="form-control" placeholder="タスクを検索..." />
+                <button @onclick="SearchTasks" class="btn btn-outline-secondary" type="button">検索</button>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <select @bind="statusFilter" @bind:after="SearchTasks" class="form-select">
+                <option value="">全てのステータス</option>
+                <option value="Pending">未完了</option>
+                <option value="Completed">完了</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select @bind="sortBy" @bind:after="SearchTasks" class="form-select">
+                <option value="createdAt">作成日順</option>
+                <option value="title">タイトル順</option>
+                <option value="dueDate">期日順</option>
+                <option value="priority">優先度順</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button @onclick="ShowCreateModal" class="btn btn-primary w-100">
+                <i class="fas fa-plus me-1"></i>新規作成
+            </button>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">読み込み中...</span>
+            </div>
+            <p class="mt-2">タスクを読み込み中...</p>
+        </div>
+    }
+    else if (tasks?.Data?.Any() == true)
+    {
+        <!-- タスクリスト -->
+        <div class="row">
+            @foreach (var task in tasks.Data)
+            {
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card task-card @(task.Status == TodoTaskStatus.Completed ? "completed" : "")">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h5 class="card-title text-truncate" title="@task.Title">
+                                    @if (task.Status == TodoTaskStatus.Completed)
+                                    {
+                                        <s>@task.Title</s>
+                                    }
+                                    else
+                                    {
+                                        @task.Title
+                                    }
+                                </h5>
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                        <i class="fas fa-ellipsis-v"></i>
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li><button class="dropdown-item" @onclick="() => ShowEditModal(task)">
+                                            <i class="fas fa-edit me-1"></i>編集
+                                        </button></li>
+                                        <li><button class="dropdown-item" @onclick="() => ToggleTaskStatus(task)">
+                                            <i class="fas fa-@(task.Status == TodoTaskStatus.Completed ? "undo" : "check") me-1"></i>
+                                            @(task.Status == TodoTaskStatus.Completed ? "未完了に戻す" : "完了にする")
+                                        </button></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><button class="dropdown-item text-danger" @onclick="() => DeleteTask(task.Id)">
+                                            <i class="fas fa-trash me-1"></i>削除
+                                        </button></li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(task.Description))
+                            {
+                                <p class="card-text text-muted small">@task.Description</p>
+                            }
+
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="badge bg-@GetPriorityColor(task.Priority) text-@GetPriorityTextColor(task.Priority)">
+                                    @GetPriorityText(task.Priority)
+                                </span>
+                                
+                                @if (task.DueDate.HasValue)
+                                {
+                                    <small class="text-muted">
+                                        <i class="fas fa-calendar me-1"></i>
+                                        @task.DueDate.Value.ToString("MM/dd")
+                                    </small>
+                                }
+                            </div>
+
+                            <div class="mt-2">
+                                <small class="text-muted">
+                                    作成: @task.CreatedAt.ToString("MM/dd HH:mm")
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- ページング -->
+        @if (tasks.Pagination.TotalPages > 1)
+        {
+            <nav aria-label="ページネーション">
+                <ul class="pagination justify-content-center">
+                    <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
+                        <button class="page-link" @onclick="() => GoToPage(currentPage - 1)" disabled="@(currentPage <= 1)">
+                            前へ
+                        </button>
+                    </li>
+                    
+                    @for (int i = Math.Max(1, currentPage - 2); i <= Math.Min(tasks.Pagination.TotalPages, currentPage + 2); i++)
+                    {
+                        var pageNumber = i;
+                        <li class="page-item @(currentPage == pageNumber ? "active" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(pageNumber)">@pageNumber</button>
+                        </li>
+                    }
+                    
+                    <li class="page-item @(currentPage >= tasks.Pagination.TotalPages ? "disabled" : "")">
+                        <button class="page-link" @onclick="() => GoToPage(currentPage + 1)" disabled="@(currentPage >= tasks.Pagination.TotalPages)">
+                            次へ
+                        </button>
+                    </li>
+                </ul>
+            </nav>
+        }
+    }
+    else
+    {
+        <div class="text-center py-5">
+            <i class="fas fa-tasks fa-3x text-muted mb-3"></i>
+            <h4 class="text-muted">タスクがありません</h4>
+            <p class="text-muted">新しいタスクを作成してみましょう</p>
+            <button @onclick="ShowCreateModal" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i>最初のタスクを作成
+            </button>
+        </div>
+    }
+</div>
+
+<!-- 作成・編集モーダル -->
+<div class="modal @(showModal ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">@(isEditing ? "タスクを編集" : "新しいタスクを作成")</h5>
+                <button type="button" class="btn-close" @onclick="CloseModal"></button>
+            </div>
+            <div class="modal-body">
+                @if (taskForm != null)
+                {
+                    <div class="mb-3">
+                        <label class="form-label">タイトル <span class="text-danger">*</span></label>
+                        <input @bind="taskForm.Title" class="form-control" placeholder="タスクのタイトルを入力" maxlength="200" />
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">説明</label>
+                        <textarea @bind="taskForm.Description" class="form-control" rows="3" placeholder="タスクの詳細説明（任意）" maxlength="2000"></textarea>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">優先度</label>
+                            <select @bind="taskForm.Priority" class="form-select">
+                                <option value="@Priority.Low">低</option>
+                                <option value="@Priority.Medium">中</option>
+                                <option value="@Priority.High">高</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">期日</label>
+                            <input @bind="dueDateValue" @bind:format="yyyy-MM-ddTHH:mm" type="datetime-local" class="form-control" />
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="CloseModal">キャンセル</button>
+                <button type="button" class="btn btn-primary" @onclick="SaveTask" disabled="@isSaving">
+                    @if (isSaving)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    @(isEditing ? "更新" : "作成")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private PagedResultDto<TaskDto>? tasks;
+    private bool isLoading = true;
+    private string searchText = "";
+    private string statusFilter = "";
+    private string sortBy = "createdAt";
+    private int currentPage = 1;
+    private int pageSize = 9;
+
+    // モーダル関連
+    private bool showModal = false;
+    private bool isEditing = false;
+    private bool isSaving = false;
+    private TaskFormModel? taskForm;
+    private DateTime? dueDateValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTasks();
+    }
+
+    private async Task LoadTasks()
+    {
+        isLoading = true;
+        try
+        {
+            tasks = await TaskApi.GetTasksAsync(
+                page: currentPage,
+                pageSize: pageSize,
+                search: string.IsNullOrEmpty(searchText) ? null : searchText,
+                status: string.IsNullOrEmpty(statusFilter) ? null : statusFilter,
+                sortBy: sortBy,
+                sortOrder: "desc"
+            );
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"タスクの読み込みエラー: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SearchTasks()
+    {
+        currentPage = 1;
+        await LoadTasks();
+    }
+
+    private async Task OnSearchKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SearchTasks();
+        }
+    }
+
+    private async Task GoToPage(int page)
+    {
+        currentPage = page;
+        await LoadTasks();
+    }
+
+    private void ShowCreateModal()
+    {
+        taskForm = new TaskFormModel();
+        dueDateValue = null;
+        isEditing = false;
+        showModal = true;
+    }
+
+    private void ShowEditModal(TaskDto task)
+    {
+        taskForm = new TaskFormModel
+        {
+            Id = task.Id,
+            Title = task.Title,
+            Description = task.Description,
+            Priority = task.Priority,
+            DueDate = task.DueDate
+        };
+        dueDateValue = task.DueDate;
+        isEditing = true;
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        taskForm = null;
+        dueDateValue = null;
+    }
+
+    private async Task SaveTask()
+    {
+        if (taskForm == null || string.IsNullOrWhiteSpace(taskForm.Title))
+            return;
+
+        isSaving = true;
+        try
+        {
+            if (isEditing)
+            {
+                var updateRequest = new UpdateTaskRequestDto
+                {
+                    Title = taskForm.Title,
+                    Description = taskForm.Description,
+                    Priority = taskForm.Priority,
+                    DueDate = dueDateValue
+                };
+                await TaskApi.UpdateTaskAsync(taskForm.Id, updateRequest);
+            }
+            else
+            {
+                var createRequest = new CreateTaskRequestDto
+                {
+                    Title = taskForm.Title,
+                    Description = taskForm.Description,
+                    Priority = taskForm.Priority,
+                    DueDate = dueDateValue
+                };
+                await TaskApi.CreateTaskAsync(createRequest);
+            }
+
+            CloseModal();
+            await LoadTasks();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"タスクの保存エラー: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task ToggleTaskStatus(TaskDto task)
+    {
+        try
+        {
+            var newStatus = task.Status == TodoTaskStatus.Completed 
+                ? TodoTaskStatus.Pending 
+                : TodoTaskStatus.Completed;
+
+            var updateRequest = new UpdateTaskRequestDto
+            {
+                Title = task.Title,
+                Description = task.Description,
+                Status = newStatus,
+                Priority = task.Priority,
+                DueDate = task.DueDate
+            };
+
+            await TaskApi.UpdateTaskAsync(task.Id, updateRequest);
+            await LoadTasks();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"タスクのステータス変更エラー: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteTask(Guid taskId)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "このタスクを削除しますか？");
+        if (!confirmed) return;
+
+        try
+        {
+            await TaskApi.DeleteTaskAsync(taskId);
+            await LoadTasks();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"タスクの削除エラー: {ex.Message}");
+        }
+    }
+
+    private string GetPriorityColor(Priority priority) => priority switch
+    {
+        Priority.High => "danger",
+        Priority.Medium => "warning",
+        Priority.Low => "info",
+        _ => "secondary"
+    };
+
+    private string GetPriorityTextColor(Priority priority) => priority switch
+    {
+        Priority.High => "white",
+        Priority.Medium => "dark",
+        Priority.Low => "white",
+        _ => "white"
+    };
+
+    private string GetPriorityText(Priority priority) => priority switch
+    {
+        Priority.High => "高",
+        Priority.Medium => "中",
+        Priority.Low => "低",
+        _ => "未設定"
+    };
+
+    public class TaskFormModel
+    {
+        public Guid Id { get; set; }
+        public string Title { get; set; } = "";
+        public string? Description { get; set; }
+        public Priority Priority { get; set; } = Priority.Medium;
+        public DateTime? DueDate { get; set; }
+    }
+}
+
+<style>
+    .task-card {
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        border: 1px solid #dee2e6;
+    }
+
+    .task-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    .task-card.completed {
+        background-color: #f8f9fa;
+        border-color: #28a745;
+    }
+
+    .task-card.completed .card-title {
+        color: #6c757d;
+    }
+
+    .modal.show {
+        display: block !important;
+    }
+
+    .text-truncate {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+</style>

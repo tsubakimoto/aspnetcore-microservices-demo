@@ -1,42 +1,228 @@
-# GitHub Codespaces ♥️ .NET
+# ToDoアプリケーション - ASP.NET Core マイクロサービスデモ
 
-Want to try out the latest performance improvements coming with .NET for web development? 
+ASP.NET Core 9.0を使用したマイクロサービスアーキテクチャによるToDoアプリケーションのデモンストレーションです。
 
-This repo builds a Weather API, OpenAPI integration to test with [Scalar](https://learn.microsoft.com/aspnet/core/fundamentals/openapi/using-openapi-documents?view=aspnetcore-9.0#use-scalar-for-interactive-api-documentation), and displays the data in a web application using Blazor with .NET. 
+## 🏗️ アーキテクチャ概要
 
-We've given you both a frontend and backend to play around with and where you go from here is up to you!
+このプロジェクトはマイクロサービスアーキテクチャの原則に基づいて設計されており、以下のサービスで構成されています：
 
-Everything you do here is contained within this one codespace. There is no repository on GitHub yet. If and when you’re ready you can click "Publish Branch" and we’ll create your repository and push up your project. If you were just exploring then and have no further need for this code then you can simply delete your codespace and it's gone forever.
+- **Task Service** (完全実装済み) - タスクのCRUD操作、ページング、フィルタリング、ソート機能
+- **Label Service** - ラベル管理機能
+- **File Service** - ファイルアップロード・ダウンロード機能
+- **Shared Library** - 共通DTOとモデル
 
-### Run Options
+## 📋 前提条件
 
-[![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=lightgrey&logo=github)](https://codespaces.new/github/dotnet-codespaces)
-[![Open in Dev Container](https://img.shields.io/static/v1?style=for-the-badge&label=Dev+Container&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/github/dotnet-codespaces)
+### 必要な環境
 
-You can also run this repository locally by following these instructions: 
-1. Clone the repo to your local machine `git clone https://github.com/github/dotnet-codespaces`
-1. Open repo in VS Code
+- **.NET 9.0 SDK** またはそれ以降
+- **Git**
+- **Visual Studio Code** または **Visual Studio 2022** (推奨)
 
-## Getting started
+### オプション環境
 
-1. **📤 One-click setup**: [Open a new Codespace](https://codespaces.new/github/dotnet-codespaces), giving you a fully configured cloud developer environment.
-2. **▶️ Run all, one-click again**: Use VS Code's built-in *Run* command and open the forwarded ports *8080* and *8081* in your browser. 
+- **Docker Desktop** (コンテナ実行用、将来実装予定)
+- **SQL Server** (本番環境用、開発環境ではSQLiteを自動使用)
 
-![Debug menu in VS Code showing Run All](images/RunAll.png)
+## 🚀 クイックスタート
 
-3. The Blazor web app and Scalar can be open by heading to **/scalar** in your browser. On Scalar, head to the backend API and click "Test Request" to call and test the API. 
+### 1. リポジトリのクローン
 
-![A website showing weather](images/BlazorApp.png)
+```bash
+git clone https://github.com/tsubakimoto/aspnetcore-microservices-demo.git
+cd aspnetcore-microservices-demo
+```
 
-!["UI showing testing an API"](images/scalar.png)
+### 2. 依存関係の復元
 
+```bash
+# ソリューション全体の依存関係を復元
+dotnet restore
+```
 
-4. **🔄 Iterate quickly:** Codespaces updates the server on each save, and VS Code's debugger lets you dig into the code execution.
+### 3. アプリケーションのビルド
 
-5. To stop running, return to VS Code, and click Stop twice in the debug toolbar. 
+```bash
+# 全プロジェクトをビルド
+dotnet build
+```
 
-![VS Code stop debuggin on both backend and frontend](images/StopRun.png)
+### 4. Task Serviceの実行
 
+```bash
+# Task Serviceディレクトリに移動
+cd src/Services/Task/TodoApp.Services.Task
+
+# アプリケーションを実行
+dotnet run
+```
+
+または、ソリューションルートから：
+
+```bash
+dotnet run --project src/Services/Task/TodoApp.Services.Task/TodoApp.Services.Task.csproj
+```
+
+### 5. API動作確認
+
+Task Serviceが起動したら、ブラウザで以下のURLにアクセス：
+
+- **Swagger UI**: `http://localhost:5105` または `https://localhost:7077`
+- **ヘルスチェック**: `http://localhost:5105/health`
+
+## 🧪 テストの実行
+
+### 全テストの実行
+
+```bash
+# ソリューション全体のテストを実行
+dotnet test
+```
+
+### 特定プロジェクトのテスト実行
+
+```bash
+# Task Serviceのテストのみ実行
+dotnet test tests/Task.Tests/TodoApp.Services.Task.Tests/TodoApp.Services.Task.Tests.csproj
+```
+
+## 📁 プロジェクト構造
+
+```
+aspnetcore-microservices-demo/
+├── src/                              # ソースコードディレクトリ
+│   ├── Services/                     # マイクロサービス
+│   │   ├── Task/                     # タスクサービス
+│   │   │   └── TodoApp.Services.Task/
+│   │   ├── Label/                    # ラベルサービス
+│   │   │   └── TodoApp.Services.Label/
+│   │   └── File/                     # ファイルサービス
+│   │       └── TodoApp.Services.File/
+│   └── Shared/                       # 共有ライブラリ
+│       └── TodoApp.Shared/
+├── tests/                            # テストプロジェクト
+│   ├── Task.Tests/
+│   ├── Label.Tests/
+│   └── File.Tests/
+├── design-docs/                      # 設計書
+├── infra/                           # インフラストラクチャコード (将来実装)
+└── TodoApp.sln                     # ソリューションファイル
+```
+
+## 🔧 開発環境セットアップ
+
+### Visual Studio Code
+
+推奨拡張機能：
+
+```bash
+# C# Dev Kit
+code --install-extension ms-dotnettools.csdevkit
+
+# C# Extensions
+code --install-extension ms-dotnettools.csharp
+
+# NuGet Package Manager
+code --install-extension jmrog.vscode-nuget-package-manager
+```
+
+### データベース
+
+- **開発環境**: SQLiteが自動的に作成・使用されます
+- **本番環境**: SQL Serverを使用（接続文字列設定が必要）
+
+## 🌐 API エンドポイント
+
+### Task Service API (`http://localhost:5105`)
+
+| Method | Endpoint | 説明 |
+|--------|----------|------|
+| `GET` | `/api/v1/tasks` | タスク一覧取得（ページング対応） |
+| `GET` | `/api/v1/tasks/{id}` | タスク詳細取得 |
+| `POST` | `/api/v1/tasks` | タスク作成 |
+| `PUT` | `/api/v1/tasks/{id}` | タスク更新 |
+| `DELETE` | `/api/v1/tasks/{id}` | タスク削除 |
+
+### クエリパラメータ
+
+- `page`: ページ番号 (デフォルト: 1)
+- `pageSize`: 1ページの件数 (デフォルト: 10, 最大: 100)
+- `status`: ステータスフィルター (`Pending`, `Completed`, `Deleted`)
+- `search`: 検索文字列（タイトル・詳細内容を対象）
+- `sortBy`: ソート項目 (`title`, `dueDate`, `createdAt`, `updatedAt`, `priority`)
+- `sortOrder`: ソート順 (`asc`, `desc`)
+- `labelIds`: ラベルIDフィルター（カンマ区切り）
+
+### 使用例
+
+```bash
+# 基本的なタスク一覧取得
+curl "http://localhost:5105/api/v1/tasks"
+
+# ページング付きでタスク取得
+curl "http://localhost:5105/api/v1/tasks?page=1&pageSize=5"
+
+# ステータスフィルター付き
+curl "http://localhost:5105/api/v1/tasks?status=Pending"
+
+# 検索機能
+curl "http://localhost:5105/api/v1/tasks?search=重要"
+
+# タスク作成
+curl -X POST "http://localhost:5105/api/v1/tasks" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "新しいタスク",
+    "description": "タスクの詳細",
+    "priority": 2,
+    "dueDate": "2024-12-31T23:59:59Z"
+  }'
+```
+
+## 🐛 トラブルシューティング
+
+### 一般的な問題
+
+1. **ポートが既に使用されている**
+   ```bash
+   # 別のポートを指定して実行
+   dotnet run --urls "http://localhost:5106"
+   ```
+
+2. **データベース接続エラー**
+   - 開発環境ではSQLiteが自動作成されるため、通常は発生しません
+   - SQLiteファイルの権限を確認してください
+
+3. **ビルドエラー**
+   ```bash
+   # NuGetキャッシュをクリア
+   dotnet nuget locals all --clear
+   
+   # 依存関係を再復元
+   dotnet restore --force
+   ```
+
+### ログの確認
+
+```bash
+# 詳細なログ出力でアプリケーションを実行
+dotnet run --verbosity detailed
+```
+
+## 📚 参考資料
+
+- [設計書](./design-docs/README.md)
+- [API仕様書](./design-docs/api-specification.md)
+- [データベース設計書](./design-docs/database-design.md)
+- [Azure インフラストラクチャ設計書](./design-docs/azure-infrastructure.md)
+
+## 🎯 実装状況
+
+- ✅ **Task Service**: 完全実装済み（CRUD、ページング、フィルタリング、ソート）
+- ⏳ **Label Service**: 基本構造のみ実装
+- ⏳ **File Service**: 基本構造のみ実装
+- ✅ **共有ライブラリ**: 完全実装済み
+- ✅ **テストフレームワーク**: 設定済み
 
 ## Contributing
 
