@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using TodoApp.Shared.Models;
 
 namespace TodoApp.Shared.DTOs.Task;
@@ -10,11 +11,14 @@ public class UpdateTaskRequestDto
     /// <summary>
     /// タイトル
     /// </summary>
+    [Required(ErrorMessage = "タイトルは必須です")]
+    [StringLength(200, ErrorMessage = "タイトルは200文字以内で入力してください")]
     public string Title { get; set; } = string.Empty;
     
     /// <summary>
     /// 詳細内容
     /// </summary>
+    [StringLength(2000, ErrorMessage = "詳細内容は2000文字以内で入力してください")]
     public string? Description { get; set; }
     
     /// <summary>
