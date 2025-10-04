@@ -1,0 +1,17 @@
+[
+  {
+    "Name": "新しいプロファイル",
+    "Projects": [
+      {
+        "Path": "src\\Services\\Task\\TodoApp.Services.Task\\TodoApp.Services.Task.csproj",
+        "Action": "Start",
+        "DebugTarget": "https"
+      },
+      {
+        "Path": "src\\Frontend\\TodoApp.Frontend\\TodoApp.Frontend.csproj",
+        "Action": "Start",
+        "DebugTarget": "https"
+      }
+    ]
+  }
+]
