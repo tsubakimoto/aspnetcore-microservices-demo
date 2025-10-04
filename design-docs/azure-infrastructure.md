@@ -24,7 +24,7 @@ ToDoアプリケーション マイクロサービスのAzureインフラスト�
               │           │           │
 ┌─────────────▼──┐ ┌──────▼──────┐ ┌──▼─────────────┐
 │   Task API     │ │  Label API  │ │   File API     │
-│ (App Service)  │ │(App Service)│ │ (App Service)  │
+│(Container App) │ │(Container App)│ │(Container App) │
 │   East Japan   │ │ East Japan  │ │  East Japan    │
 └─────────────┬──┘ └──────┬──────┘ └──┬─────────────┘
               │           │           │
@@ -34,6 +34,15 @@ ToDoアプリケーション マイクロサービスのAzureインフラスト�
 │  (Task DB)     │ │ (Label DB)  │ │ (File Storage) │
 └────────────────┘ └─────────────┘ └────────────────┘
 ```
+
+**Azure Container Apps の特徴**:
+Azure Container Apps は従来の App Service と比較して、マイクロサービス アーキテクチャに特化した以下の利点を提供します：
+
+1. **コンテナ ネイティブ**: Docker コンテナによる一貫したデプロイメント
+2. **ゼロスケール**: トラフィックがない場合の完全なスケールダウン
+3. **マイクロサービス通信**: Dapr による簡素化されたサービス間通信
+4. **リビジョン管理**: ブルーグリーン デプロイメントとトラフィック分割
+5. **コスト効率**: 使用量ベースの課金モデル
 
 ### リージョン戦略
 
@@ -45,61 +54,155 @@ ToDoアプリケーション マイクロサービスのAzureインフラスト�
 
 ### 1. Compute Services
 
-#### 1.1 Azure App Service
+#### 1.1 Azure Container Apps
 
-**Service Plan 設定**:
+**Container Apps Environment 設定**:
 ```yaml
-App Service Plan:
-  Name: todoapp-plan-prod
-  SKU: P1V3 (Premium v3)
-  OS: Windows
-  Region: Japan East
-  Scaling:
-    Min Instances: 2
-    Max Instances: 10
-    Auto Scale Rules:
-      - CPU > 70% for 5 minutes → Scale Out
-      - CPU < 30% for 10 minutes → Scale In
-      - Memory > 80% for 5 minutes → Scale Out
+Container Apps Environment:
+  Name: todoapp-env-prod
+  Location: Japan East
+  Workload Profiles:
+    - Name: consumption
+      WorkloadProfileType: Consumption
+  VNet Configuration:
+    Internal: false
+    PlatformReservedCidr: 10.0.0.0/23
+    PlatformReservedDnsIP: 10.0.0.10
+  App Logs Configuration:
+    Destination: log-analytics
+    LogAnalyticsConfiguration:
+      CustomerId: "<LOG_ANALYTICS_WORKSPACE_ID>"
+      SharedKey: "<LOG_ANALYTICS_SHARED_KEY>"
 ```
 
-**Web Apps 構成**:
+**Container Apps 構成**:
 
 1. **Task API Service**
    ```yaml
    Name: todoapp-task-api-prod
-   Runtime: .NET 9.0
-   Always On: true
-   Health Check: /health
+   Location: Japan East
+   Environment: todoapp-env-prod
    Configuration:
-     - ASPNETCORE_ENVIRONMENT: Production
-     - ApplicationInsights__ConnectionString: "<AI_CONNECTION_STRING>"
-     - TaskDb__ConnectionString: "<TASK_DB_CONNECTION_STRING>"
+     Ingress:
+       External: true
+       TargetPort: 8080
+       Transport: auto
+       Traffic:
+         - Weight: 100
+           LatestRevision: true
+     Dapr:
+       Enabled: true
+       AppId: task-api
+       AppProtocol: http
+       AppPort: 8080
+     Secrets:
+       - Name: task-db-connection
+         Value: "<TASK_DB_CONNECTION_STRING>"
+       - Name: app-insights-key
+         Value: "<APPLICATION_INSIGHTS_KEY>"
+   Template:
+     Containers:
+       - Name: task-api
+         Image: todoappregistry.azurecr.io/task-api:latest
+         Resources:
+           Cpu: 0.5
+           Memory: 1Gi
+         Env:
+           - Name: ASPNETCORE_ENVIRONMENT
+             Value: Production
+           - Name: ConnectionStrings__TaskDb
+             SecretRef: task-db-connection
+           - Name: ApplicationInsights__InstrumentationKey
+             SecretRef: app-insights-key
+     Scale:
+       MinReplicas: 1
+       MaxReplicas: 10
+       Rules:
+         - Name: http-scaling
+           Http:
+             Metadata:
+               ConcurrentRequests: 50
    ```
 
 2. **Label API Service**
    ```yaml
    Name: todoapp-label-api-prod
-   Runtime: .NET 9.0
-   Always On: true
-   Health Check: /health
+   Location: Japan East
+   Environment: todoapp-env-prod
    Configuration:
-     - ASPNETCORE_ENVIRONMENT: Production
-     - ApplicationInsights__ConnectionString: "<AI_CONNECTION_STRING>"
-     - LabelDb__ConnectionString: "<LABEL_DB_CONNECTION_STRING>"
+     Ingress:
+       External: true
+       TargetPort: 8080
+       Transport: auto
+     Dapr:
+       Enabled: true
+       AppId: label-api
+       AppProtocol: http
+       AppPort: 8080
+   Template:
+     Containers:
+       - Name: label-api
+         Image: todoappregistry.azurecr.io/label-api:latest
+         Resources:
+           Cpu: 0.25
+           Memory: 0.5Gi
+     Scale:
+       MinReplicas: 1
+       MaxReplicas: 5
    ```
 
 3. **File API Service**
    ```yaml
    Name: todoapp-file-api-prod
-   Runtime: .NET 9.0
-   Always On: true
-   Health Check: /health
+   Location: Japan East
+   Environment: todoapp-env-prod
    Configuration:
-     - ASPNETCORE_ENVIRONMENT: Production
-     - ApplicationInsights__ConnectionString: "<AI_CONNECTION_STRING>"
-     - BlobStorage__ConnectionString: "<BLOB_CONNECTION_STRING>"
+     Ingress:
+       External: true
+       TargetPort: 8080
+       Transport: auto
+     Dapr:
+       Enabled: true
+       AppId: file-api
+       AppProtocol: http
+       AppPort: 8080
+   Template:
+     Containers:
+       - Name: file-api
+         Image: todoappregistry.azurecr.io/file-api:latest
+         Resources:
+           Cpu: 0.5
+           Memory: 1Gi
+     Scale:
+       MinReplicas: 1
+       MaxReplicas: 8
    ```
+
+#### 1.2 Azure Container Registry
+
+**設定仕様**:
+```yaml
+Container Registry:
+  Name: todoappregistry
+  SKU: Standard
+  Region: Japan East
+  Admin User: Enabled
+  Public Network Access: Enabled
+  
+Repositories:
+  - todoapp/task-api
+  - todoapp/label-api  
+  - todoapp/file-api
+  
+Security:
+  Content Trust: Enabled
+  Vulnerability Scanning: Enabled
+  
+Access Control:
+  - Container Apps: AcrPull role
+  - DevOps Pipeline: AcrPush, AcrPull roles
+  - Developers: AcrPull role (development images)
+```
 
 ### 2. Database Services
 
@@ -134,7 +237,7 @@ Databases:
 ```yaml
 Firewall Rules:
   - Allow Azure Services: true
-  - App Service IPs: automatic
+  - Container Apps IPs: automatic
   - Developer IPs: specific ranges
 
 Authentication:
@@ -224,21 +327,22 @@ Virtual Network:
   Region: Japan East
 
 Subnets:
-  - app-subnet:
-      Address Range: 10.0.1.0/24
-      Service Endpoints: Microsoft.Sql, Microsoft.Storage
-      
-  - gateway-subnet:
-      Address Range: 10.0.2.0/24
+  - container-apps-subnet:
+      Address Range: 10.0.1.0/23
+      Delegation: Microsoft.App/environments
       
   - private-endpoint-subnet:
       Address Range: 10.0.3.0/24
+      
+  - gateway-subnet:
+      Address Range: 10.0.4.0/24
 
 Network Security Groups:
-  - app-nsg:
+  - container-apps-nsg:
       Rules:
         - Allow HTTPS (443) from Internet
-        - Allow HTTP (80) from Internet (redirect to HTTPS)
+        - Allow HTTP (80) from Internet
+        - Allow Container Apps internal communication
         - Deny all other inbound traffic
 ```
 
@@ -268,7 +372,7 @@ Key Vault:
   Region: Japan East
   
 Access Policies:
-  - App Services: Get, List (Secrets)
+  - Container Apps: Get, List (Secrets)
   - Deployment Service Principal: All permissions
   - Admin Group: All permissions
 
@@ -325,6 +429,7 @@ Permissions:
   - Key Vault: Get, List secrets
   - SQL Database: db_datareader, db_datawriter
   - Blob Storage: Storage Blob Data Contributor
+  - Container Registry: AcrPull
 ```
 
 ### 6. Monitoring & Logging
@@ -361,7 +466,7 @@ Log Analytics:
   
 Data Sources:
   - Application Insights
-  - App Service Logs
+  - Container Apps Logs
   - SQL Database Logs
   - Blob Storage Logs
   - Network Security Group Logs
@@ -386,15 +491,15 @@ API Management:
 APIs:
   - Task API:
       Base URL: /api/v1/tasks
-      Backend: todoapp-task-api-prod.azurewebsites.net
+      Backend: todoapp-task-api-prod.xxx.azurecontainerapps.io
       
   - Label API:
       Base URL: /api/v1/labels
-      Backend: todoapp-label-api-prod.azurewebsites.net
+      Backend: todoapp-label-api-prod.xxx.azurecontainerapps.io
       
   - File API:
       Base URL: /api/v1/files
-      Backend: todoapp-file-api-prod.azurewebsites.net
+      Backend: todoapp-file-api-prod.xxx.azurecontainerapps.io
 
 Policies:
   - Rate Limiting:
@@ -440,6 +545,11 @@ Release Pipelines:
         - Development: Auto deploy on CI success
         - Staging: Auto deploy with approval
         - Production: Manual approval required
+      Tasks:
+        - Build and push Docker images to ACR
+        - Deploy to Container Apps using Azure CLI
+        - Run health checks
+        - Update traffic routing
 ```
 
 #### 8.2 Infrastructure as Code
@@ -461,13 +571,32 @@ Release Pipelines:
   },
   "resources": [
     {
-      "type": "Microsoft.Web/serverfarms",
-      "apiVersion": "2022-03-01",
-      "name": "[concat('todoapp-plan-', parameters('environment'))]",
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2023-05-01",
+      "name": "[concat('todoapp-env-', parameters('environment'))]",
       "location": "[parameters('location')]",
-      "sku": {
-        "name": "P1V3",
-        "tier": "PremiumV3"
+      "properties": {
+        "appLogsConfiguration": {
+          "destination": "log-analytics"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-01",
+      "name": "[concat('todoapp-task-api-', parameters('environment'))]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', concat('todoapp-env-', parameters('environment')))]"
+      ],
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', concat('todoapp-env-', parameters('environment')))]",
+        "configuration": {
+          "ingress": {
+            "external": true,
+            "targetPort": 8080
+          }
+        }
       }
     }
   ]
@@ -512,7 +641,7 @@ DR Procedures:
      - Update connection strings
      - Verify data integrity
      
-  2. App Service Deployment:
+  2. Container Apps Deployment:
      - Deploy to Japan West region
      - Update DNS (Front Door)
      - Health check verification
@@ -521,6 +650,11 @@ DR Procedures:
      - Switch to replicated storage
      - Update Blob endpoints
      - Verify file accessibility
+
+  4. Container Registry Replication:
+     - Verify image availability in target region
+     - Update Container Apps image references
+     - Test container deployment
 
 Testing Schedule:
   - Monthly: Failover testing
@@ -533,10 +667,16 @@ Testing Schedule:
 #### 10.1 リソース最適化
 
 ```yaml
-App Service:
-  Development: B1 (Basic)
-  Staging: S1 (Standard)
-  Production: P1V3 (Premium) with auto-scaling
+Container Apps:
+  Development: 
+    CPU: 0.25, Memory: 0.5Gi
+    Min Replicas: 0, Max Replicas: 2
+  Staging: 
+    CPU: 0.5, Memory: 1Gi
+    Min Replicas: 1, Max Replicas: 5
+  Production: 
+    CPU: 0.5-1, Memory: 1-2Gi
+    Min Replicas: 2, Max Replicas: 10
 
 SQL Database:
   Development: S0 (10 DTU)
@@ -549,7 +689,7 @@ Storage:
   Cool/Archive tiers: automatic transition
 
 Reserved Instances:
-  App Service: 1 year reservation (30% savings)
+  Container Registry: Standard tier
   SQL Database: 1 year reservation (20% savings)
 ```
 
@@ -618,11 +758,27 @@ Data Classification:
 #### 12.1 ヘルスチェック
 
 ```yaml
-App Service Health Checks:
-  Path: /health
-  Interval: 60 seconds
-  Timeout: 30 seconds
-  Unhealthy threshold: 3 failures
+Container Apps Health Checks:
+  Startup Probe:
+    Path: /health/startup
+    InitialDelaySeconds: 10
+    PeriodSeconds: 10
+    TimeoutSeconds: 5
+    FailureThreshold: 3
+    
+  Liveness Probe:
+    Path: /health/live
+    InitialDelaySeconds: 30
+    PeriodSeconds: 30
+    TimeoutSeconds: 5
+    FailureThreshold: 3
+    
+  Readiness Probe:
+    Path: /health/ready
+    InitialDelaySeconds: 5
+    PeriodSeconds: 10
+    TimeoutSeconds: 5
+    FailureThreshold: 3
 
 SQL Database Monitoring:
   DTU utilization: < 80%
@@ -643,16 +799,19 @@ Critical Alerts (24/7):
   - Service down: any health check failure
   - Database offline: connection failures
   - High error rate: > 5% in 5 minutes
+  - Container startup failure: pod restart loops
 
 Warning Alerts (business hours):
-  - High resource usage: > 80% for 15 minutes
+  - High resource usage: > 80% CPU/Memory for 15 minutes
   - Slow response times: > 2 seconds avg
   - Storage quota: > 90% usage
+  - Container registry pull failures
 
 Info Alerts (daily summary):
   - Performance summary
   - Cost summary
   - Security summary
+  - Container image vulnerability scan results
 ```
 
 ---

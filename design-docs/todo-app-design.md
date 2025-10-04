@@ -10,7 +10,7 @@ Azure上でのクラウドネイティブなアプリケーションとして設
 - **フレームワーク**: ASP.NET Core 9.0
 - **データベース**: SQL Server 2025
 - **クラウドプラットフォーム**: Microsoft Azure
-  - Azure App Service
+  - Azure Container Apps
   - Azure SQL Database
   - Azure Blob Storage
 - **認証**: Microsoft Entra ID (旧Azure AD)
@@ -22,6 +22,24 @@ Azure上でのクラウドネイティブなアプリケーションとして設
 - **ドメイン駆動設計 (DDD)**
 - **Command Query Responsibility Segregation (CQRS)** パターン
 - **Clean Architecture** パターン
+
+### 1.4 Azure Container Apps を選択した理由
+Azure Container Apps は、マイクロサービス デプロイメントに最適化されたサーバーレス コンテナ プラットフォームです：
+
+#### 主要な利点：
+- **マイクロサービス最適化**: 複数のマイクロサービスにまたがるアプリケーションに最適化
+- **Kubernetes ベース**: Kubernetes、Dapr、KEDA、Envoy などのオープンソース技術を活用
+- **サービス ディスカバリ**: Kubernetes スタイルのアプリとマイクロサービスをサポート
+- **トラフィック分割**: リビジョン管理とトラフィック分割機能
+- **イベント駆動**: キューなどのイベントソースからのスケーリングをサポート
+- **ゼロスケール**: 使用量に応じた完全なゼロスケールを含む自動スケーリング
+- **コスト効率**: 使用した分だけの課金モデル
+
+#### Azure App Service との比較：
+- **コンテナ ネイティブ**: コンテナ化されたワークロードに特化
+- **マイクロサービス サポート**: 複数サービス間の通信とサービス ディスカバリ
+- **スケーラビリティ**: より効率的なリソース使用とゼロスケール機能
+- **DevOps 統合**: コンテナ レジストリとの緊密な統合
 
 ## 2. 機能要件
 
@@ -104,7 +122,7 @@ Azure上でのクラウドネイティブなアプリケーションとして設
 - **RPO**: 1時間以内
 
 ### 3.3 スケーラビリティ要件
-- **水平スケーリング**: Azure App Serviceの自動スケーリング
+- **水平スケーリング**: Azure Container Apps の自動スケーリング
 - **データベーススケーリング**: Azure SQL Databaseの読み取りレプリカ
 
 ### 3.4 セキュリティ要件
@@ -127,7 +145,7 @@ Azure上でのクラウドネイティブなアプリケーションとして設
                 │               │               │
         ┌───────▼──────┐ ┌──────▼──────┐ ┌─────▼──────┐
         │   Task API   │ │  Label API  │ │  File API  │
-        │  (App Service)│ │(App Service)│ │(App Service)│
+        │(Container App)│ │(Container App)│ │(Container App)│
         └───────┬──────┘ └──────┬──────┘ └─────┬──────┘
                 │               │               │
         ┌───────▼──────┐ ┌──────▼──────┐ ┌─────▼──────┐
@@ -143,7 +161,23 @@ Azure上でのクラウドネイティブなアプリケーションとして設
 4. **User Service**: ユーザー認証・認可
 5. **Notification Service**: 通知機能
 
-### 4.3 データ整合性
+### 4.3 Container Apps Environment
+Azure Container Apps Environment は、関連するコンテナ アプリのグループに対してセキュリティ境界を提供します：
+
+- **共有インフラ**: 同一環境内のアプリは共有インフラストラクチャを使用
+- **ネットワーク分離**: VNet 統合によるプライベート ネットワーク
+- **Dapr 統合**: マイクロサービス間通信の簡素化
+- **ログ統合**: 統一されたログ収集と監視
+
+### 4.4 Dapr 統合
+Distributed Application Runtime (Dapr) により、マイクロサービス開発を簡素化：
+
+- **サービス間通信**: mTLS、再試行、タイムアウトを含むサービス呼び出し
+- **状態管理**: 分散状態ストアへの一貫したアクセス
+- **Pub/Sub メッセージング**: 疎結合なメッセージング パターン
+- **可観測性**: 分散トレーシングとメトリクス収集
+
+### 4.5 データ整合性
 - **Saga Pattern**: 分散トランザクションの管理
 - **Event Sourcing**: 状態変更の履歴管理
 - **Eventual Consistency**: 結果整合性の採用
@@ -320,13 +354,20 @@ Authorization: Bearer {JWT_TOKEN}
 ```yaml
 # Azure Resource Manager Template (概要)
 resources:
-  - type: Microsoft.Web/serverfarms
-    name: todoapp-plan
-    sku: P1V3
+  - type: Microsoft.App/managedEnvironments
+    name: todoapp-env
+    properties:
+      appLogsConfiguration:
+        destination: log-analytics
   
-  - type: Microsoft.Web/sites
+  - type: Microsoft.App/containerApps
     name: todoapp-task-api
-    serverFarmId: todoapp-plan
+    environmentId: todoapp-env
+    properties:
+      configuration:
+        ingress:
+          external: true
+          targetPort: 8080
   
   - type: Microsoft.Sql/servers
     name: todoapp-sql-server
@@ -363,6 +404,11 @@ stages:
           - task: DotNetCoreCLI@2
             inputs:
               command: 'test'
+          - task: Docker@2
+            inputs:
+              command: 'buildAndPush'
+              repository: 'todoapp/task-api'
+              containerRegistry: 'todoappregistry'
   
   - stage: Deploy
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
@@ -373,10 +419,12 @@ stages:
           runOnce:
             deploy:
               steps:
-                - task: AzureWebApp@1
+                - task: AzureContainerApps@1
                   inputs:
                     azureSubscription: 'Azure-Connection'
-                    appName: 'todoapp-task-api'
+                    containerAppName: 'todoapp-task-api'
+                    resourceGroup: 'todoapp-rg'
+                    imageToDeploy: 'todoappregistry.azurecr.io/todoapp/task-api:$(Build.BuildId)'
 ```
 
 ## 9. 監視・ログ設計

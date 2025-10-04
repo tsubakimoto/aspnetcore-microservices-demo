@@ -40,9 +40,10 @@
 - **Redis**: キャッシュ、セッション管理
 
 ### クラウドサービス (Azure)
-- **Azure App Service**: ホスティング
+- **Azure Container Apps**: ホスティング（マイクロサービス用）
 - **Azure SQL Database**: マネージドデータベース
 - **Azure Blob Storage**: ファイルストレージ
+- **Azure Container Registry**: コンテナイメージ管理
 - **Azure Key Vault**: シークレット管理
 - **Azure Application Insights**: 監視
 - **Azure API Management**: API ゲートウェイ
